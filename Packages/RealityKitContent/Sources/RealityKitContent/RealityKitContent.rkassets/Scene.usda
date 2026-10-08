@@ -12,47 +12,78 @@ def Xform "Root"
         bindMaterialAs = "weakerThanDescendants"
     )
 
-    def Sphere "Sphere" (
-        active = true
-        prepend apiSchemas = ["MaterialBindingAPI"]
-    )
-    {
-        rel material:binding = </Root/GridMaterial/GridMaterial> (
-            bindMaterialAs = "weakerThanDescendants"
-        )
-        double radius = 0.05
-        quatf xformOp:orient = (1, 0, 0, 0)
-        float3 xformOp:scale = (1, 1, 1)
-        float3 xformOp:translate = (0, 0, 0.0004)
-        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
-
-        def RealityKitComponent "Collider"
-        {
-            uint group = 1
-            uniform token info:id = "RealityKit.Collider"
-            uint mask = 4294967295
-            token type = "Default"
-
-            def RealityKitStruct "Shape"
-            {
-                float3 extent = (0.2, 0.2, 0.2)
-                float radius = 0.05
-                token shapeType = "Sphere"
-            }
-        }
-
-        def RealityKitComponent "InputTarget"
-        {
-            uniform token info:id = "RealityKit.InputTarget"
-        }
-    }
-
     def "GridMaterial" (
         active = true
         prepend references = @Materials/GridMaterial.usda@
     )
     {
         float3 xformOp:scale = (1, 1, 1)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "beetle" (
+        active = true
+        prepend references = @beetle.usdz@
+    )
+    {
+        float3 xformOp:scale = (0.03, 0.03, 0.03)
+        float3 xformOp:translate = (0.10771, 0.18, -1.6219)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "feeding_tunnel_1" (
+        active = true
+        customData = {
+            float3 rotationEulerHint = (0, 0, 3.1415927)
+        }
+        prepend references = @feeding-tunnel-1.usdz@
+    )
+    {
+        quatf xformOp:orient = (-4.371139e-8, 0, 0, 1)
+        float3 xformOp:scale = (0.14, 0.14, 0.14)
+        float3 xformOp:translate = (1.025, 1.85967, -1.85865)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "woodcenter" (
+        active = true
+        customData = {
+            float3 rotationEulerHint = (4.7123885, 1.5707963, 0)
+        }
+        prepend references = @woodcenter.usdz@
+    )
+    {
+        quatf xformOp:orient = (0.49999988, -0.5000001, 0.49999988, 0.5000001)
+        float3 xformOp:scale = (0.5, 0.5, 0.5)
+        float3 xformOp:translate = (1.1362543, 0, -3)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "bark" (
+        active = true
+        customData = {
+            float3 rotationEulerHint = (4.7123885, -1.5707963, 0)
+        }
+        prepend references = @bark.usdz@
+    )
+    {
+        quatf xformOp:orient = (0.5, 0.5, -0.5, 0.5)
+        float3 xformOp:scale = (0.5, 0.5, 0.5)
+        float3 xformOp:translate = (1.1170856, 0, -1.96)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+
+    def "bast" (
+        active = true
+        customData = {
+            float3 rotationEulerHint = (1.570797, -1.5707963, 0)
+        }
+        prepend references = @bast.usdz@
+    )
+    {
+        quatf xformOp:orient = (-0.49999982, 0.50000024, 0.49999973, 0.50000024)
+        float3 xformOp:scale = (0.5, 0.5, 0.5)
+        float3 xformOp:translate = (-0.86684, 0, -1.7555718)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
     }
 }

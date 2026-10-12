@@ -24,6 +24,11 @@ struct LayerComponent: Component {
     /// Height (log root space) at which the info panel floats.
     var panelBaseY: Float
     var panelID: Entity.ID?
+    var descriptionPanelID: Entity.ID?
+
+    // Info-panel fade (smooth show/hide on select).
+    var panelTargetOpacity: Float = 0
+    var panelCurrentOpacity: Float = 0
 
     var isDragging = false
     var isSeparated = false
@@ -41,6 +46,12 @@ struct LayerComponent: Component {
     var effectStart: Double?
     var effectDuration: Double = 1
 }
+
+/// Tag for the draggable control panel so gestures can identify it.
+struct ControlPanelTag: Component {}
+
+/// Tag for description panels so tap gestures can ignore them.
+struct DescriptionPanelTag: Component {}
 
 /// One sugar droplet streaming along the cambium. All numbers are in the layer's local space.
 struct NutrientParticleComponent: Component {

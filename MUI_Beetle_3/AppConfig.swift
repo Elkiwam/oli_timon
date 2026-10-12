@@ -17,7 +17,7 @@ enum AppConfig {
     // The immersive-space origin is on the floor below the user at launch.
     static let logPosition: SIMD3<Float> = [0, 1.2, -1.1]
     /// Control panel position relative to `logPosition`: below the log and closer to the user.
-    static let controlPanelOffset: SIMD3<Float> = [0, -0.45, 0.75]
+    static let controlPanelOffset: SIMD3<Float> = [0, -0.15, 0.15]
     /// Distance from the top of the log to the centre of an info panel.
     static let panelHeightAboveLog: Float = 0.22
 

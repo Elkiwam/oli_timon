@@ -12,6 +12,7 @@ struct WelcomeView: View {
             VStack(alignment: .center, spacing: 16) {
                 Text("Bark beetles")
                     .font(.system(size: 42, weight: .semibold, design: .serif))
+                    .foregroundStyle(Color(red: 0.85, green: 0.85, blue: 0.81))
 
                 Text("Barely five millimetres long, yet able to destroy whole stands of spruce. They bore under the bark, where they feed, breed and cut the tree's supply lines.")
                     .font(.title3)
@@ -44,7 +45,5 @@ struct WelcomeView: View {
         .multilineTextAlignment(.center)
         .padding(48)
         .frame(width: 700, alignment: .center)
-        .background(Color(red: 0.05, green: 0.25, blue: 0.1, opacity: 0.7))
-        .cornerRadius(24)
     }
 }

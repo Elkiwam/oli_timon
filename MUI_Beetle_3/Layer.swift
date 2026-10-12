@@ -64,7 +64,7 @@ enum Layer: Int, CaseIterable, Identifiable, Hashable {
         case .bark:          "Tap the bark to make it pulse, like a tree under attack."
         case .beetle:        "Tap the beetle to enlarge it and look closer."
         case .feedingTunnel: "Tap the tunnels to send a light along them."
-        case .bast:       "Tap the cambium to watch sugars flow through it."
+        case .bast:         "Tap the bast to watch sugars flow through it."
         case .innerLog:      "Tap the wood to turn it slowly."
         }
     }

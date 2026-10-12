@@ -224,7 +224,13 @@ final class AppModel {
     var selectedLayer: Layer?                     // currently selected layer (tap highlight)
     var draggingLayer: Layer?                     // layer currently being dragged
     var separatedLayers: Set<Layer> = []          // layers that have been pulled apart
+    var innerLogRevealed = false                  // true after the user's first tap on inner wood
     var hasSeparatedLayers: Bool { !separatedLayers.isEmpty }
+
+    /// The next layer the user must drag, enforcing the outside-to-inside sequence.
+    var nextDraggableLayer: Layer? {
+        Layer.allCases.first { !separatedLayers.contains($0) }
+    }
     var inspected: Inspectable?                   // phase 3: model currently shown enlarged
     var extraSlots: [String: Int] = [:]           // tunnel / beetle (by entity name) -> pad index
 
@@ -252,6 +258,7 @@ final class AppModel {
         selectedLayer = nil
         draggingLayer = nil
         separatedLayers = []
+        innerLogRevealed = false
     }
 
     /// Back to the initial starting state.

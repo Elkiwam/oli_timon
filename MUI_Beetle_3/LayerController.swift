@@ -15,6 +15,7 @@ final class LayerController {
     private let appModel: AppModel
     private var layerEntities: [Layer: Entity] = [:]
     private var panels: [Layer: Entity] = [:]
+    private var descriptionPanels: [Layer: Entity] = [:]
     private var activeDrag: ActiveDrag?
 
     private static let flowName = "NutrientFlow"
@@ -25,6 +26,13 @@ final class LayerController {
         let pointerStartX: Float
         let layerStartX: Float
     }
+
+    private struct ActivePanelDrag {
+        let entity: Entity
+        let startPosition: SIMD3<Float>
+        let pointerStart: SIMD3<Float>
+    }
+    private var activePanelDrag: ActivePanelDrag?
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -37,6 +45,7 @@ final class LayerController {
         appModel.resetInteractionState()
         layerEntities.removeAll()
         panels.removeAll()
+        descriptionPanels.removeAll()
         activeDrag = nil
 
         let root = Entity()
@@ -103,7 +112,22 @@ final class LayerController {
         panels[layer] = panel
         state.panelID = panel.id
 
-        makeInteractive(entity, localBounds: localBounds)
+        // Description panel below the model, visible only when selected.
+        let descPanel = Entity()
+        descPanel.name = "DescPanel_\(layer.title)"
+        descPanel.components.set(ViewAttachmentComponent(rootView: LayerDescriptionView(layer: layer)))
+        descPanel.components.set(BillboardComponent())
+        descPanel.components.set(DescriptionPanelTag())
+        descPanel.components.set(CollisionComponent(shapes: [.generateBox(size: [0.5, 0.2, 0.05])]))
+        descPanel.components.set(InputTargetComponent())
+        let logBottom = rootBounds.min.y
+        descPanel.position = [rootBounds.center.x, logBottom - 0.25, rootBounds.center.z]
+        descPanel.isEnabled = false
+        root.addChild(descPanel)
+        descriptionPanels[layer] = descPanel
+        state.descriptionPanelID = descPanel.id
+
+        makeInteractive(entity, localBounds: localBounds, isDraggable: layer == appModel.nextDraggableLayer)
 
         switch layer.effect {
         case .nutrientFlow:
@@ -118,7 +142,7 @@ final class LayerController {
     }
 
     /// Collision box, input target and hover glow. The box is deliberately simple, so a layer is easy to pinch.
-    private func makeInteractive(_ entity: Entity, localBounds: BoundingBox) {
+    private func makeInteractive(_ entity: Entity, localBounds: BoundingBox, isDraggable: Bool) {
         let worldScale = max(entity.scale(relativeTo: nil).x, 0.0001)
         let minimum = AppConfig.minimumColliderSize / worldScale
         let size = SIMD3<Float>(
@@ -129,7 +153,9 @@ final class LayerController {
         let shape = ShapeResource.generateBox(size: size).offsetBy(translation: localBounds.center)
         entity.components.set(CollisionComponent(shapes: [shape]))
         entity.components.set(InputTargetComponent())
-        entity.components.set(HoverEffectComponent(.highlight(.init(color: UIColor(red: 0.72, green: 0.52, blue: 0.32, alpha: 1), strength: 0.6))))
+        if isDraggable {
+            entity.components.set(HoverEffectComponent(.highlight(.init(color: UIColor(red: 0.72, green: 0.52, blue: 0.32, alpha: 1), strength: 0.6))))
+        }
     }
 
     /// An invisible wall behind the log. A tap on empty space lands on it and clears the selection.
@@ -159,8 +185,30 @@ final class LayerController {
 
     func handleDragChanged(_ value: EntityTargetValue<DragGesture.Value>) {
         let point = value.convert(value.location3D, from: .local, to: .scene)
-        let x = Float(point.x)
 
+        // Check if dragging a description panel
+        if let panelDrag = activePanelDrag {
+            let delta = SIMD3<Float>(Float(point.x), Float(point.y), Float(point.z)) - panelDrag.pointerStart
+            panelDrag.entity.position = panelDrag.startPosition + delta
+            return
+        }
+
+        // Start a new panel drag if the entity is a description panel
+        var target = value.entity
+        while target.parent != nil {
+            if target.components[DescriptionPanelTag.self] != nil {
+                activePanelDrag = ActivePanelDrag(
+                    entity: target,
+                    startPosition: target.position,
+                    pointerStart: SIMD3<Float>(Float(point.x), Float(point.y), Float(point.z))
+                )
+                return
+            }
+            target = target.parent!
+        }
+
+        // Otherwise handle layer drag
+        let x = Float(point.x)
         guard let drag = activeDrag else {
             beginDrag(on: value.entity, pointerX: x)
             return
@@ -176,6 +224,10 @@ final class LayerController {
     }
 
     func handleDragEnded() {
+        if activePanelDrag != nil {
+            activePanelDrag = nil
+            return
+        }
         guard let drag = activeDrag else { return }
         activeDrag = nil
         appModel.draggingLayer = nil
@@ -201,6 +253,10 @@ final class LayerController {
     private func beginDrag(on entity: Entity, pointerX: Float) {
         guard let (layer, layerEntity) = layerOwner(of: entity),
               var state = layerEntity.components[LayerComponent.self] else { return }
+
+        // Enforce the forced drag sequence: only the next layer in order can be dragged.
+        guard layer == appModel.nextDraggableLayer else { return }
+
         state.isDragging = true
         layerEntity.components.set(state)
 
@@ -212,6 +268,13 @@ final class LayerController {
     // MARK: - Selection and effects
 
     func handleTap(on entity: Entity) {
+        // Ignore taps on description panels
+        var current: Entity? = entity
+        while let candidate = current {
+            if candidate.components[DescriptionPanelTag.self] != nil { return }
+            current = candidate.parent
+        }
+
         if let (layer, _) = layerOwner(of: entity) {
             select(appModel.selectedLayer == layer ? nil : layer)
         } else {
@@ -221,20 +284,30 @@ final class LayerController {
 
     /// Selects a layer, fades the others and starts the tap effect. Pass nil to clear.
     private func select(_ layer: Layer?) {
+        // Inner log first tap: reveal the title but skip animation and description.
+        let isInnerLogFirstTap = layer == .innerLog && !appModel.innerLogRevealed
+
         appModel.selectedLayer = layer
 
         for (candidate, entity) in layerEntities {
             guard var state = entity.components[LayerComponent.self] else { continue }
             let isSelected = candidate == layer
             state.targetOpacity = (layer == nil || isSelected) ? 1 : AppConfig.fadedOpacity
-            state.targetScale = isSelected ? candidate.selectedScale : 1
+            state.targetScale = isSelected && !isInnerLogFirstTap ? candidate.selectedScale : 1
             entity.components.set(state)
         }
 
-        if let layer, let entity = layerEntities[layer] {
+        if let layer, let entity = layerEntities[layer], !isInnerLogFirstTap {
             startEffect(for: layer, on: entity)
         }
+
+        // refreshPanels reads innerLogRevealed, so set it AFTER so the
+        // description stays hidden during the first-tap selection.
         refreshPanels()
+
+        if isInnerLogFirstTap {
+            appModel.innerLogRevealed = true
+        }
     }
 
     private func startEffect(for layer: Layer, on entity: Entity) {
@@ -293,10 +366,39 @@ final class LayerController {
     // MARK: - Helpers
 
     private func refreshPanels() {
-        for (layer, panel) in panels {
+        let nextDraggable = appModel.nextDraggableLayer
+
+        for (layer, _) in panels {
             let isSeparated = appModel.separatedLayers.contains(layer)
-            let isRevealed = layer == .innerLog && appModel.hasSeparatedLayers
-            panel.isEnabled = appModel.selectedLayer == layer || appModel.draggingLayer == layer || isSeparated || isRevealed
+            let innerLogSticky = layer == .innerLog && appModel.innerLogRevealed
+            let shouldShow = appModel.selectedLayer == layer
+                || appModel.draggingLayer == layer
+                || isSeparated
+                || innerLogSticky
+
+            // Drive the panel's opacity target on the layer entity; the system eases it.
+            if let entity = layerEntities[layer],
+               var state = entity.components[LayerComponent.self] {
+                state.panelTargetOpacity = shouldShow ? 1 : 0
+                entity.components.set(state)
+            }
+        }
+        for (layer, descPanel) in descriptionPanels {
+            // Inner log description is hidden until after its first tap.
+            let showDesc = appModel.selectedLayer == layer
+                && (layer != .innerLog || appModel.innerLogRevealed)
+            descPanel.isEnabled = showDesc
+        }
+
+        // Only the next layer in the forced sequence gets a hover highlight.
+        for (layer, entity) in layerEntities {
+            if layer == nextDraggable {
+                if entity.components[HoverEffectComponent.self] == nil {
+                    entity.components.set(HoverEffectComponent(.highlight(.init(color: UIColor(red: 0.72, green: 0.52, blue: 0.32, alpha: 1), strength: 0.6))))
+                }
+            } else {
+                entity.components.remove(HoverEffectComponent.self)
+            }
         }
     }
 

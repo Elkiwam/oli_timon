@@ -74,11 +74,39 @@ struct LayerMotionSystem: System {
             entity.orientation = rotation * state.baseOrientation
             entity.scale = state.baseScale * scaleFactor
 
-            // Info panel follows the layer, lifting when the model scales up
+            // Info panel: smooth opacity fade and vertical slide
+            let kp = 1 - exp(-8 * dt)
+            state.panelCurrentOpacity += (state.panelTargetOpacity - state.panelCurrentOpacity) * kp
+            if abs(state.panelTargetOpacity - state.panelCurrentOpacity) < 0.002 {
+                state.panelCurrentOpacity = state.panelTargetOpacity
+            }
+
+            let layerCenter = state.basePosition + center
             if let id = state.panelID, let panel = context.scene.findEntity(id: id) {
-                let layerCenter = state.basePosition + center
-                let scaleOffset: Float = scaleFactor > 1.01 ? 0.2 : 0
-                panel.position = [layerCenter.x, state.panelBaseY + scaleOffset, layerCenter.z]
+                let visible = state.panelCurrentOpacity > 0.01
+                panel.isEnabled = visible
+                if visible {
+                    panel.components.set(OpacityComponent(opacity: state.panelCurrentOpacity))
+                    let scaleOffset: Float = scaleFactor > 1.01 ? 0.2 : 0
+                    // Slide up as it fades in; slide down as it fades out.
+                    let slideOffset = (1 - state.panelCurrentOpacity) * -0.08
+                    let targetPos = SIMD3<Float>(layerCenter.x, state.panelBaseY + scaleOffset + slideOffset, layerCenter.z)
+                    // Animate toward the target; called each frame so the panel
+                    // smoothly lifts on selection and lowers on deselection.
+                    panel.move(
+                        to: Transform(scale: .one, rotation: panel.orientation, translation: targetPos),
+                        relativeTo: panel.parent,
+                        duration: 0.25,
+                        timingFunction: .easeOut
+                    )
+                }
+            }
+
+            // Description panel: only set initial position, don't override user repositioning
+            if let id = state.descriptionPanelID, let descPanel = context.scene.findEntity(id: id),
+               !descPanel.isEnabled {
+                let bounds = entity.visualBounds(relativeTo: entity.parent)
+                descPanel.position = [layerCenter.x, bounds.min.y - 0.25, layerCenter.z]
             }
 
             entity.components.set(state)

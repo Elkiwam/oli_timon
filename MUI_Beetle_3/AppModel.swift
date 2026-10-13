@@ -225,6 +225,7 @@ final class AppModel {
     var draggingLayer: Layer?                     // layer currently being dragged
     var separatedLayers: Set<Layer> = []          // layers that have been pulled apart
     var innerLogRevealed = false                  // true after the user's first tap on inner wood
+    var isDraggingControlPanel = false            // drives drag bar visual feedback
     var hasSeparatedLayers: Bool { !separatedLayers.isEmpty }
 
     /// The next layer the user must drag, enforcing the outside-to-inside sequence.

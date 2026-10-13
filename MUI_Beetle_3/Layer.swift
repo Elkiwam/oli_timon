@@ -2,7 +2,7 @@ import Foundation
 
 /// What happens when a layer is tapped (besides fading the other layers).
 enum LayerEffect {
-    case pulse          // bark: the whole shell pulses
+    case boreHole       // bark: bore holes appear, sawdust falls and heaps form
     case enlarge        // beetle: scaled up while selected
     case sweep          // feeding tunnel: a light sweeps along the galleries
     case nutrientFlow   // cambium: sugar droplets stream along the layer
@@ -87,7 +87,7 @@ enum Layer: Int, CaseIterable, Identifiable, Hashable {
 
     var effect: LayerEffect {
         switch self {
-        case .bark:          .pulse
+        case .bark:          .boreHole
         case .beetle:        .enlarge
         case .feedingTunnel: .sweep
         case .bast:       .nutrientFlow
@@ -98,7 +98,7 @@ enum Layer: Int, CaseIterable, Identifiable, Hashable {
     /// Length of the transient animation, in seconds.
     var effectDuration: Double {
         switch self {
-        case .bark:          1.4
+        case .bark:          0
         case .beetle:        0
         case .feedingTunnel: 4.0
         case .bast:       6.0

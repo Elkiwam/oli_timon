@@ -17,7 +17,7 @@ enum AppConfig {
     // The immersive-space origin is on the floor below the user at launch.
     static let logPosition: SIMD3<Float> = [0, 1.2, -1.1]
     /// Control panel position relative to `logPosition`: below the log and closer to the user.
-    static let controlPanelOffset: SIMD3<Float> = [0, -0.15, 0.15]
+    static let controlPanelOffset: SIMD3<Float> = [0.1, -0.45, 0.15]
     /// Distance from the top of the log to the centre of an info panel.
     static let panelHeightAboveLog: Float = 0.22
 
@@ -30,6 +30,29 @@ enum AppConfig {
     static let fadedOpacity: Float = 0.25
     /// Smallest collision box edge, so tiny models (the beetle) stay easy to pinch.
     static let minimumColliderSize: Float = 0.1
+
+    // MARK: Bore hole effect on the bark
+    static let boreHoleCount = 3
+    static let boreHoleRadius: Float = 0.004
+    static let dustPerHole = 6
+    static let dustRadius: Float = 0.003
+    static let dustFallSpeed: Float = 0.06
+    static let heapRadius: Float = 0.012
+    static let boreHoleCycleDuration: Double = 7.0
+    static let holeAppearTime: Float = 0.4
+    static let holeStagger: Float = 2.0
+    static let dustStartDelay: Float = 0.3
+    static let dustDuration: Float = 1.8
+    static let fadeOutDuration: Float = 0.5
+
+    // MARK: Tunnel trace animation
+    static let tunnelDotRadius: Float = 0.08        // mother beetle dot size (local space)
+    static let larvaDotRadius: Float = 0.06          // larva dot size
+    static let motherTravelTime: Float = 3.0         // seconds for mother to travel main tunnel
+    static let larvaTravelTime: Float = 2.0          // seconds per larva arm
+    static let larvaStartOffset: Float = 0.2         // delay after mother passes branch point
+    static let tunnelCycleDuration: Float = 10.0     // total loop duration
+    static let tunnelFadeOut: Float = 0.5            // fade at cycle end
 
     // MARK: Nutrient flow in the cambium
     static let particlesPerFlow = 20

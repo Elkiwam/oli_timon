@@ -53,6 +53,37 @@ struct ControlPanelTag: Component {}
 /// Tag for description panels so tap gestures can ignore them.
 struct DescriptionPanelTag: Component {}
 
+/// One bore hole on the bark surface. Scales in at a staggered time within the cycle.
+struct BoreHoleComponent: Component {
+    var holeIndex: Int
+    var localPosition: SIMD3<Float>
+    var startTime: Double = 0
+    var runUntil: Double = 0
+}
+
+/// A falling sawdust particle or a heap at the base of the bark.
+struct SawdustComponent: Component {
+    var holeIndex: Int
+    var originPosition: SIMD3<Float>
+    var floorY: Float
+    var lateralOffset: SIMD3<Float>
+    var phase: Float
+    var isHeap: Bool = false
+    var startTime: Double = 0
+    var runUntil: Double = 0
+}
+
+/// A dot tracing a tunnel path (mother beetle on the main tunnel, or a larva on a side arm).
+struct TunnelDotComponent: Component {
+    var pathStart: SIMD3<Float>
+    var pathEnd: SIMD3<Float>
+    var startDelay: Float           // seconds into the cycle before this dot begins
+    var travelDuration: Float       // seconds to travel the path
+    var isMother: Bool = false
+    var startTime: Double = 0
+    var runUntil: Double = 0
+}
+
 /// One sugar droplet streaming along the cambium. All numbers are in the layer's local space.
 struct NutrientParticleComponent: Component {
     var center: SIMD3<Float>

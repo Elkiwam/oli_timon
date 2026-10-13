@@ -121,7 +121,7 @@ final class LayerController {
         descPanel.components.set(CollisionComponent(shapes: [.generateBox(size: [0.5, 0.2, 0.05])]))
         descPanel.components.set(InputTargetComponent())
         let logBottom = rootBounds.min.y
-        descPanel.position = [rootBounds.center.x, logBottom - 0.25, rootBounds.center.z]
+        descPanel.position = [rootBounds.center.x, logBottom - 0.45, rootBounds.center.z]
         descPanel.isEnabled = false
         root.addChild(descPanel)
         descriptionPanels[layer] = descPanel
@@ -130,11 +130,13 @@ final class LayerController {
         makeInteractive(entity, localBounds: localBounds, isDraggable: layer == appModel.nextDraggableLayer)
 
         switch layer.effect {
+        case .boreHole:
+            addBoreHoleEffect(to: entity, bounds: localBounds, axisIndex: axisIndex)
         case .nutrientFlow:
             addNutrientFlow(to: entity, bounds: localBounds, axisIndex: axisIndex)
         case .sweep:
-            addSweepDisc(to: entity, bounds: localBounds, axisIndex: axisIndex)
-        case .pulse, .enlarge, .turn:
+            addTunnelAnimation(to: entity, bounds: localBounds)
+        case .enlarge, .turn:
             break
         }
 
@@ -178,6 +180,19 @@ final class LayerController {
         )))
         panel.components.set(BillboardComponent())
         panel.position = AppConfig.controlPanelOffset
+
+        // Drag bar: a child entity with its own view attachment.
+        // Only this entity has collision, so the panel's SwiftUI buttons stay clickable.
+        let dragBar = Entity()
+        dragBar.name = "ControlPanelDragBar"
+        dragBar.components.set(ViewAttachmentComponent(rootView: DragBarView(appModel: appModel)))
+        dragBar.components.set(BillboardComponent())
+        dragBar.components.set(ControlPanelTag())
+        dragBar.components.set(CollisionComponent(shapes: [.generateBox(size: [0.15, 0.03, 0.05])]))
+        dragBar.components.set(InputTargetComponent())
+        dragBar.position = [0, -0.065, 0]
+        panel.addChild(dragBar)
+
         return panel
     }
 
@@ -193,7 +208,7 @@ final class LayerController {
             return
         }
 
-        // Start a new panel drag if the entity is a description panel
+        // Start a new panel drag if the entity is a description panel or control panel drag bar
         var target = value.entity
         while target.parent != nil {
             if target.components[DescriptionPanelTag.self] != nil {
@@ -202,6 +217,17 @@ final class LayerController {
                     startPosition: target.position,
                     pointerStart: SIMD3<Float>(Float(point.x), Float(point.y), Float(point.z))
                 )
+                return
+            }
+            if target.components[ControlPanelTag.self] != nil {
+                // Move the parent panel, not the drag bar child.
+                let panel = target.parent ?? target
+                activePanelDrag = ActivePanelDrag(
+                    entity: panel,
+                    startPosition: panel.position,
+                    pointerStart: SIMD3<Float>(Float(point.x), Float(point.y), Float(point.z))
+                )
+                appModel.isDraggingControlPanel = true
                 return
             }
             target = target.parent!
@@ -226,6 +252,7 @@ final class LayerController {
     func handleDragEnded() {
         if activePanelDrag != nil {
             activePanelDrag = nil
+            appModel.isDraggingControlPanel = false
             return
         }
         guard let drag = activeDrag else { return }
@@ -257,6 +284,11 @@ final class LayerController {
         // Enforce the forced drag sequence: only the next layer in order can be dragged.
         guard layer == appModel.nextDraggableLayer else { return }
 
+        // Reveal inner wood title on first touch (drag or tap).
+        if layer == .innerLog && !appModel.innerLogRevealed {
+            appModel.innerLogRevealed = true
+        }
+
         state.isDragging = true
         layerEntity.components.set(state)
 
@@ -268,10 +300,11 @@ final class LayerController {
     // MARK: - Selection and effects
 
     func handleTap(on entity: Entity) {
-        // Ignore taps on description panels
+        // Ignore taps on description panels and the control panel drag bar
         var current: Entity? = entity
         while let candidate = current {
-            if candidate.components[DescriptionPanelTag.self] != nil { return }
+            if candidate.components[DescriptionPanelTag.self] != nil
+                || candidate.components[ControlPanelTag.self] != nil { return }
             current = candidate.parent
         }
 
@@ -297,6 +330,14 @@ final class LayerController {
             entity.components.set(state)
         }
 
+        // Stop looping effects when their layer is deselected.
+        if let barkEntity = layerEntities[.bark], layer != .bark {
+            stopBoreHoleEffect(on: barkEntity)
+        }
+        if let tunnelEntity = layerEntities[.feedingTunnel], layer != .feedingTunnel {
+            stopTunnelAnimation(on: tunnelEntity)
+        }
+
         if let layer, let entity = layerEntities[layer], !isInnerLogFirstTap {
             startEffect(for: layer, on: entity)
         }
@@ -314,7 +355,25 @@ final class LayerController {
         let now = CACurrentMediaTime()
 
         switch layer.effect {
-        case .pulse, .turn:
+        case .boreHole:
+            guard let container = entity.findEntity(named: Self.boreHoleName) else { return }
+            let farFuture = now + 3600    // loops until explicitly stopped
+            for child in container.children {
+                if var h = child.components[BoreHoleComponent.self] {
+                    h.startTime = now
+                    h.runUntil = farFuture
+                    child.components.set(h)
+                    child.isEnabled = true
+                }
+                if var s = child.components[SawdustComponent.self] {
+                    s.startTime = now
+                    s.runUntil = farFuture
+                    child.components.set(s)
+                    child.isEnabled = true
+                }
+            }
+
+        case .turn:
             guard var state = entity.components[LayerComponent.self] else { return }
             state.effectStart = now
             state.effectDuration = layer.effectDuration
@@ -324,13 +383,16 @@ final class LayerController {
             break // handled by `targetScale` in select(_:)
 
         case .sweep:
-            guard let disc = entity.findEntity(named: Self.sweepName),
-                  var sweep = disc.components[SweepDiscComponent.self] else { return }
-            sweep.startTime = now
-            sweep.duration = layer.effectDuration
-            sweep.runUntil = now + layer.effectDuration
-            disc.components.set(sweep)
-            disc.isEnabled = true
+            guard let container = entity.findEntity(named: Self.tunnelAnimName) else { return }
+            let farFuture = now + 3600
+            for child in container.children {
+                if var dot = child.components[TunnelDotComponent.self] {
+                    dot.startTime = now
+                    dot.runUntil = farFuture
+                    child.components.set(dot)
+                    child.isEnabled = true
+                }
+            }
 
         case .nutrientFlow:
             guard let flow = entity.findEntity(named: Self.flowName) else { return }
@@ -340,6 +402,32 @@ final class LayerController {
                 particle.runUntil = now + layer.effectDuration
                 droplet.components.set(particle)
                 droplet.isEnabled = true
+            }
+        }
+    }
+
+    /// Immediately stops the bore hole looping effect on the bark entity.
+    private func stopBoreHoleEffect(on entity: Entity) {
+        guard let container = entity.findEntity(named: Self.boreHoleName) else { return }
+        for child in container.children {
+            if var h = child.components[BoreHoleComponent.self] {
+                h.runUntil = 0
+                child.components.set(h)
+            }
+            if var s = child.components[SawdustComponent.self] {
+                s.runUntil = 0
+                child.components.set(s)
+            }
+        }
+    }
+
+    /// Immediately stops the tunnel dot animation on the feeding tunnel entity.
+    private func stopTunnelAnimation(on entity: Entity) {
+        guard let container = entity.findEntity(named: Self.tunnelAnimName) else { return }
+        for child in container.children {
+            if var dot = child.components[TunnelDotComponent.self] {
+                dot.runUntil = 0
+                child.components.set(dot)
             }
         }
     }
@@ -360,6 +448,7 @@ final class LayerController {
             entity.components.set(state)
         }
         appModel.separatedLayers.removeAll()
+        appModel.innerLogRevealed = false
         refreshPanels()
     }
 
@@ -390,11 +479,14 @@ final class LayerController {
             descPanel.isEnabled = showDesc
         }
 
-        // Only the next layer in the forced sequence gets a hover highlight.
+        // Hover highlight: during the forced sequence only the next layer glows.
+        // Once all outer layers are separated, every model gets the glow.
+        let allOuterSeparated = nextDraggable == .innerLog || nextDraggable == nil
+        let hoverEffect = HoverEffectComponent(.highlight(.init(color: UIColor(red: 0.72, green: 0.52, blue: 0.32, alpha: 1), strength: 0.6)))
         for (layer, entity) in layerEntities {
-            if layer == nextDraggable {
+            if allOuterSeparated || layer == nextDraggable {
                 if entity.components[HoverEffectComponent.self] == nil {
-                    entity.components.set(HoverEffectComponent(.highlight(.init(color: UIColor(red: 0.72, green: 0.52, blue: 0.32, alpha: 1), strength: 0.6))))
+                    entity.components.set(hoverEffect)
                 }
             } else {
                 entity.components.remove(HoverEffectComponent.self)
@@ -436,6 +528,86 @@ final class LayerController {
 
     // MARK: - Procedural effect geometry
 
+    private static let boreHoleName = "BoreHoles"
+
+    private func addBoreHoleEffect(to entity: Entity, bounds: BoundingBox, axisIndex: Int) {
+        let axis = Self.basis(axisIndex)
+        let (a, b) = Self.perpendicularIndices(to: axisIndex)
+        let halfLength = bounds.extents[axisIndex] / 2
+        let radius = max(bounds.extents[a], bounds.extents[b]) / 2
+        let worldScale = max(entity.scale(relativeTo: nil).x, 0.0001)
+
+        // Floor Y for heaps: bottom of the bark in local space.
+        let floorY = bounds.min.y
+
+        // Distribute holes along the long axis and around the surface.
+        let holeAngles: [Float] = [0.3, -0.5, 0.8]            // radians around the surface
+        let holeAlongs: [Float] = [-0.25, 0.15, 0.4]           // fraction of halfLength
+
+        // Materials
+        let holeMaterial = UnlitMaterial(color: UIColor(red: 0.08, green: 0.05, blue: 0.03, alpha: 1))
+        let dustMaterial = UnlitMaterial(color: UIColor(red: 0.72, green: 0.58, blue: 0.36, alpha: 1))
+
+        let holeMesh = MeshResource.generateSphere(radius: AppConfig.boreHoleRadius / worldScale)
+        let dustMesh = MeshResource.generateSphere(radius: AppConfig.dustRadius / worldScale)
+        let heapMesh = MeshResource.generateSphere(radius: AppConfig.heapRadius / worldScale)
+
+        let container = Entity()
+        container.name = Self.boreHoleName
+
+        for i in 0..<AppConfig.boreHoleCount {
+            let along = holeAlongs[i] * halfLength
+            let angle = holeAngles[i]
+            let surfaceOffset = (cos(angle) * Self.basis(a) + sin(angle) * Self.basis(b)) * radius
+            let holePos = bounds.center + axis * along + surfaceOffset
+
+            // Bore hole sphere
+            let hole = ModelEntity(mesh: holeMesh, materials: [holeMaterial])
+            hole.position = holePos
+            hole.scale = SIMD3<Float>(repeating: 0.001)
+            hole.components.set(BoreHoleComponent(holeIndex: i, localPosition: holePos))
+            container.addChild(hole)
+
+            // Dust particles
+            for j in 0..<AppConfig.dustPerHole {
+                let dust = ModelEntity(mesh: dustMesh, materials: [dustMaterial])
+                let jitter = SIMD3<Float>(
+                    Float.random(in: -0.008...0.008),
+                    0,
+                    Float.random(in: -0.008...0.008)
+                )
+                dust.position = holePos
+                dust.scale = SIMD3<Float>(repeating: 0.001)
+                dust.isEnabled = false
+                dust.components.set(SawdustComponent(
+                    holeIndex: i,
+                    originPosition: holePos,
+                    floorY: floorY,
+                    lateralOffset: jitter,
+                    phase: Float(j) / Float(AppConfig.dustPerHole)
+                ))
+                container.addChild(dust)
+            }
+
+            // Heap at the base below the hole
+            let heap = ModelEntity(mesh: heapMesh, materials: [dustMaterial])
+            heap.position = SIMD3<Float>(holePos.x, floorY, holePos.z)
+            heap.scale = SIMD3<Float>(0.001, 0.001, 0.001)
+            heap.isEnabled = false
+            heap.components.set(SawdustComponent(
+                holeIndex: i,
+                originPosition: holePos,
+                floorY: floorY,
+                lateralOffset: .zero,
+                phase: 0,
+                isHeap: true
+            ))
+            container.addChild(heap)
+        }
+
+        entity.addChild(container)
+    }
+
     private func addNutrientFlow(to entity: Entity, bounds: BoundingBox, axisIndex: Int) {
         var axis = Self.basis(axisIndex)
         // If the log stands upright, let the sugar run downward toward the roots.
@@ -473,31 +645,85 @@ final class LayerController {
         entity.addChild(flow)
     }
 
-    private func addSweepDisc(to entity: Entity, bounds: BoundingBox, axisIndex: Int) {
-        let axis = Self.basis(axisIndex)
-        let (a, b) = Self.perpendicularIndices(to: axisIndex)
-        let halfLength = bounds.extents[axisIndex] / 2
-        let radius = max(bounds.extents[a], bounds.extents[b]) / 2
-        let worldScale = max(entity.scale(relativeTo: nil).x, 0.0001)
+    private static let tunnelAnimName = "TunnelAnim"
 
-        var material = UnlitMaterial(color: UIColor(red: 1.0, green: 0.55, blue: 0.1, alpha: 1))
-        material.blending = .transparent(opacity: 0.55)
+    private func addTunnelAnimation(to entity: Entity, bounds: BoundingBox) {
+        let cX = bounds.center.x
+        let cZ = bounds.center.z
+        let botY = bounds.min.y + bounds.extents.y * 0.05
+        let topY = bounds.max.y - bounds.extents.y * 0.05
 
-        let disc = ModelEntity(
-            mesh: .generateCylinder(height: 0.004 / worldScale, radius: radius * 1.1),
-            materials: [material]
-        )
-        disc.name = Self.sweepName
-        disc.orientation = simd_quatf(from: [0, 1, 0], to: axis)
-        disc.position = bounds.center
-        disc.scale = SIMD3<Float>(repeating: 0.001)
-        disc.components.set(SweepDiscComponent(
-            center: bounds.center,
-            axis: axis,
-            halfLength: halfLength,
-            duration: Layer.feedingTunnel.effectDuration
+        // Mother beetle main tunnel: bottom center to top center
+        let mainStart = SIMD3<Float>(cX, botY, cZ)
+        let mainEnd   = SIMD3<Float>(cX, topY, cZ)
+        let mainSpan  = topY - botY
+
+        // Side arms: (fraction along main tunnel, end X offset, end Y offset from branch)
+        // Estimated from the model's gallery pattern.
+        let arms: [(frac: Float, dx: Float, dy: Float)] = [
+            (0.25, -0.40,  -0.30),   // left, curves down
+            (0.30,  0.45,  -0.25),   // right, curves down
+            (0.38, -0.50,  -0.15),   // left
+            (0.42,  0.55,  -0.10),   // right
+            (0.50, -0.50,   0.05),   // left
+            (0.55,  0.50,   0.10),   // right
+            (0.63, -0.45,   0.20),   // left
+            (0.68,  0.45,   0.25),   // right
+            (0.76, -0.35,   0.30),   // left, shorter
+            (0.82,  0.35,   0.30),   // right, shorter
+        ]
+
+        // Materials
+        let motherMaterial = UnlitMaterial(color: UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1))
+        let larvaMaterial  = UnlitMaterial(color: UIColor(red: 1.0, green: 0.95, blue: 0.8, alpha: 1))
+
+        let motherMesh = MeshResource.generateSphere(radius: AppConfig.tunnelDotRadius)
+        let larvaMesh  = MeshResource.generateSphere(radius: AppConfig.larvaDotRadius)
+
+        let container = Entity()
+        container.name = Self.tunnelAnimName
+
+        // Mother dot
+        let mother = ModelEntity(mesh: motherMesh, materials: [motherMaterial])
+        mother.position = mainStart
+        mother.scale = SIMD3<Float>(repeating: 0.001)
+        mother.isEnabled = false
+        mother.components.set(TunnelDotComponent(
+            pathStart: mainStart,
+            pathEnd: mainEnd,
+            startDelay: 0,
+            travelDuration: AppConfig.motherTravelTime,
+            isMother: true
         ))
-        disc.isEnabled = false
-        entity.addChild(disc)
+        container.addChild(mother)
+
+        // Larva dots — one per arm
+        let halfWidth = bounds.extents.x / 2
+        for arm in arms {
+            let branchY = botY + arm.frac * mainSpan
+            let branchPoint = SIMD3<Float>(cX, branchY, cZ)
+            let endPoint = SIMD3<Float>(
+                cX + arm.dx * halfWidth,
+                branchY + arm.dy * mainSpan * 0.5,
+                cZ
+            )
+            // Larva starts when mother reaches the branch point, plus a small offset
+            let delay = arm.frac * AppConfig.motherTravelTime + AppConfig.larvaStartOffset
+
+            let larva = ModelEntity(mesh: larvaMesh, materials: [larvaMaterial])
+            larva.position = branchPoint
+            larva.scale = SIMD3<Float>(repeating: 0.001)
+            larva.isEnabled = false
+            larva.components.set(TunnelDotComponent(
+                pathStart: branchPoint,
+                pathEnd: endPoint,
+                startDelay: delay,
+                travelDuration: AppConfig.larvaTravelTime
+            ))
+            container.addChild(larva)
+        }
+
+        entity.addChild(container)
     }
 }
+

@@ -78,3 +78,24 @@ struct ControlPanelView: View {
         .glassBackgroundEffect()
     }
 }
+
+/// Drag handle below the control panel. Reacts to hover and drag.
+struct DragBarView: View {
+
+    let appModel: AppModel
+    @State private var isHovered = false
+
+    private var isDragging: Bool { appModel.isDraggingControlPanel }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(.white.opacity(isHovered || isDragging ? 0.7 : 0.35))
+            .frame(width: isDragging ? 56 : 40, height: 6)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
+            .animation(.easeInOut(duration: 0.2), value: isHovered)
+            .animation(.easeInOut(duration: 0.2), value: isDragging)
+    }
+}

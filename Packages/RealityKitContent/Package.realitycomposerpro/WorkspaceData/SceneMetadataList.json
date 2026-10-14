@@ -17,8 +17,7 @@
       },
       [
         "0A9B4653-B11E-4D6A-850E-C6FCB621626C",
-        "Root",
-        "GridMaterial"
+        "Root"
       ],
       {
         "isExpanded" : true,
@@ -26,7 +25,8 @@
       },
       [
         "0A9B4653-B11E-4D6A-850E-C6FCB621626C",
-        "Root"
+        "Root",
+        "GridMaterial"
       ],
       {
         "isExpanded" : true,

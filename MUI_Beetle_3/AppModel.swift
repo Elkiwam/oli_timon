@@ -228,6 +228,16 @@ final class AppModel {
     var isDraggingControlPanel = false            // drives drag bar visual feedback
     var hasSeparatedLayers: Bool { !separatedLayers.isEmpty }
 
+    // MARK: Object Tracking
+    /// True once the ARKit ObjectTrackingProvider has detected the physical log.
+    var logDetected = false
+    /// True when all layers have been revealed (separated).
+    var allLayersRevealed: Bool { separatedLayers.count == Layer.allCases.count }
+    /// Controls tooltip visibility: detected but not all revealed.
+    var showTooltip: Bool { logDetected && !allLayersRevealed }
+    /// Dragging is only enabled after the log is detected.
+    var isDragEnabled: Bool { logDetected }
+
     /// The next layer the user must drag, enforcing the outside-to-inside sequence.
     var nextDraggableLayer: Layer? {
         Layer.allCases.first { !separatedLayers.contains($0) }
@@ -270,6 +280,7 @@ final class AppModel {
         selected = nil
         inspected = nil
         extraSlots = [:]
+        logDetected = false
         resetInteractionState()
     }
 }

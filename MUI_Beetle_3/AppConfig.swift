@@ -54,6 +54,22 @@ enum AppConfig {
     static let tunnelCycleDuration: Float = 10.0     // total loop duration
     static let tunnelFadeOut: Float = 0.5            // fade at cycle end
 
+    // MARK: Object tracking & vertical reveal
+    /// File name of the reference object inside the RealityKitContent bundle (without extension).
+    static let referenceObjectName = "MUI_Log_1 1"
+    /// File extension for the reference object.
+    static let referenceObjectExtension = "referenceobject"
+    /// Vertical distance (metres) a layer must be dragged before it snaps to its revealed position.
+    static let revealThreshold: Float = 0.12
+    /// Maps hand movement to layer Y offset during the upward drag.
+    static let verticalDragGain: Float = 2.0
+    /// Height above the log's top surface where fully-revealed layers float.
+    static let revealedHeightAboveLog: Float = 0.35
+    /// Over this Y distance (metres), opacity goes from 0 to 1 during the rise.
+    static let riseFadeInDistance: Float = 0.08
+    /// Tooltip text shown after the physical log is detected.
+    static let tooltipText = "Pinch and swipe up"
+
     // MARK: Nutrient flow in the cambium
     static let particlesPerFlow = 20
     static let particleRadius: Float = 0.007      // world meters

@@ -1,6 +1,7 @@
 {
   "images" : [
     {
+      "filename" : "Beetle.png",
       "idiom" : "vision",
       "scale" : "2x"
     }

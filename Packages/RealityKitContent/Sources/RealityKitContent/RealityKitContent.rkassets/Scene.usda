@@ -86,5 +86,24 @@ def Xform "Root"
         float3 xformOp:translate = (-0.86684, 0, -1.7555718)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
     }
+
+    def Xform "Transform" (
+        active = true
+    )
+    {
+        float3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        def RealityKitComponent "Anchoring"
+        {
+            uniform token info:id = "RealityKit.Anchoring"
+
+            def RealityKitStruct "descriptor"
+            {
+                token type = "Object"
+                asset url = @MUI_Log_1 1.referenceobject@
+            }
+        }
+    }
 }
 

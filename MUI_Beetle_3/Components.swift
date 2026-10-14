@@ -1,6 +1,18 @@
 import RealityKit
 import simd
 
+/// The two-phase reveal state of a layer during the upward-drag interaction.
+enum RevealPhase: Int {
+    /// Layer is hidden inside the physical log, not yet interacted with.
+    case hidden = 0
+    /// User is actively dragging the layer upward (phase 1: rise + fade in).
+    case rising = 1
+    /// Layer was released past threshold; auto-animating to its final side position (phase 2).
+    case autoAnimating = 2
+    /// Layer has arrived at its final position. Fully visible, interactive.
+    case revealed = 3
+}
+
 /// Runtime state of one layer. Added to each of the five layer entities by `LayerController`.
 /// `LayerMotionSystem` reads it every frame, so the controller only ever changes targets.
 struct LayerComponent: Component {
@@ -33,9 +45,16 @@ struct LayerComponent: Component {
     var isDragging = false
     var isSeparated = false
 
-    // Fade. Starts at 0 so the log fades in when it appears.
+    // --- Reveal (vertical drag) ---
+    var revealPhase: RevealPhase = .hidden
+    /// The Y offset from restPosition during the user-driven rise.
+    var riseOffsetY: Float = 0
+    /// Final position for the side-by-side layout above the log.
+    var revealedPosition: SIMD3<Float> = .zero
+
+    // Fade. Starts at 0; layers are invisible until revealed.
     var currentOpacity: Float = 0
-    var targetOpacity: Float = 1
+    var targetOpacity: Float = 0
     var appliedOpacity: Float = -1
 
     // Persistent scale (the beetle grows while selected).

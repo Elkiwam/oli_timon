@@ -21,12 +21,34 @@ struct LayerMotionSystem: System {
         for entity in context.entities(matching: Self.query, updatingSystemWhen: .rendering) {
             guard var state = entity.components[LayerComponent.self] else { continue }
 
-            // Position: follow the hand while dragging, otherwise ease toward the target slot.
+            // Position: phase-aware easing.
             if !state.isDragging {
-                let k = 1 - exp(-20 * dt)
-                state.basePosition += (state.targetPosition - state.basePosition) * k
-                if simd_distance(state.basePosition, state.targetPosition) < 0.0005 {
-                    state.basePosition = state.targetPosition
+                switch state.revealPhase {
+                case .hidden:
+                    // Fast ease back to rest position
+                    let k = 1 - exp(-20 * dt)
+                    state.basePosition += (state.targetPosition - state.basePosition) * k
+                    if simd_distance(state.basePosition, state.targetPosition) < 0.0005 {
+                        state.basePosition = state.targetPosition
+                    }
+                case .rising:
+                    // During active drag, basePosition is set directly by the gesture handler.
+                    break
+                case .autoAnimating:
+                    // Slower ease toward the revealed side position for a cinematic feel.
+                    let k = 1 - exp(-8 * dt)
+                    state.basePosition += (state.targetPosition - state.basePosition) * k
+                    if simd_distance(state.basePosition, state.targetPosition) < 0.001 {
+                        state.basePosition = state.targetPosition
+                        state.revealPhase = .revealed
+                    }
+                case .revealed:
+                    // Standard easing for post-reveal interactions (tap-to-scale, etc.)
+                    let k = 1 - exp(-20 * dt)
+                    state.basePosition += (state.targetPosition - state.basePosition) * k
+                    if simd_distance(state.basePosition, state.targetPosition) < 0.0005 {
+                        state.basePosition = state.targetPosition
+                    }
                 }
             }
 
@@ -89,7 +111,10 @@ struct LayerMotionSystem: System {
                     let scaleOffset = min(0.2, max(0, scaleFactor - 1) * 2.0)
                     // Slide up as it fades in; slide down as it fades out.
                     let slideOffset = (1 - state.panelCurrentOpacity) * -0.08
-                    let targetPos = SIMD3<Float>(layerCenter.x, state.panelBaseY + scaleOffset + slideOffset, layerCenter.z)
+                    // Panel floats above the layer's current visual top, not at a fixed Y.
+                    let layerVisualTop = layerCenter.y + state.panelBaseY
+                    let panelY = layerVisualTop + AppConfig.panelHeightAboveLog + scaleOffset + slideOffset
+                    let targetPos = SIMD3<Float>(layerCenter.x, panelY, layerCenter.z)
                     // Animate toward the target; called each frame so the panel
                     // smoothly lifts on selection and lowers on deselection.
                     panel.move(

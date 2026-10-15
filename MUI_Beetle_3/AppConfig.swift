@@ -17,7 +17,7 @@ enum AppConfig {
     // The immersive-space origin is on the floor below the user at launch.
     static let logPosition: SIMD3<Float> = [0, 1.2, -1.1]
     /// Control panel position relative to `logPosition`: below the log and closer to the user.
-    static let controlPanelOffset: SIMD3<Float> = [0.1, -0.45, 0.15]
+    static let controlPanelOffset: SIMD3<Float> = [0, -0.45, 0]
     /// Distance from the top of the log to the centre of an info panel.
     static let panelHeightAboveLog: Float = 0.22
 
@@ -56,7 +56,7 @@ enum AppConfig {
 
     // MARK: Object tracking & vertical reveal
     /// File name of the reference object inside the RealityKitContent bundle (without extension).
-    static let referenceObjectName = "MUI_Log_1 1"
+    static let referenceObjectName = "MUI_Log_11"
     /// File extension for the reference object.
     static let referenceObjectExtension = "referenceobject"
     /// Vertical distance (metres) a layer must be dragged before it snaps to its revealed position.
@@ -64,7 +64,7 @@ enum AppConfig {
     /// Maps hand movement to layer Y offset during the upward drag.
     static let verticalDragGain: Float = 2.0
     /// Height above the log's top surface where fully-revealed layers float.
-    static let revealedHeightAboveLog: Float = 0.35
+    static let revealedHeightAboveLog: Float = 0.65
     /// Over this Y distance (metres), opacity goes from 0 to 1 during the rise.
     static let riseFadeInDistance: Float = 0.08
     /// Tooltip text shown after the physical log is detected.

@@ -76,11 +76,11 @@ enum Layer: Int, CaseIterable, Identifiable, Hashable {
     /// Models are halved: bark ~0.38m, bast ~0.31m, wood ~0.28m, tunnel ~0.19m, beetle ~0.02m.
     var revealedOffset: SIMD3<Float> {
         switch self {
-        case .bark:          SIMD3<Float>(-0.80, 0.35, 0)
-        case .beetle:        SIMD3<Float>(-0.40, 0.35, 0)
-        case .feedingTunnel: SIMD3<Float>( 0.00, 0.35, 0)
-        case .bast:          SIMD3<Float>( 0.40, 0.35, 0)
-        case .innerLog:      SIMD3<Float>( 0.80, 0.35, 0)
+        case .bark:          SIMD3<Float>(-0.80, 0.65, 0)
+        case .beetle:        SIMD3<Float>(-0.40, 0.65, 0)
+        case .feedingTunnel: SIMD3<Float>( 0.00, 0.65, 0)
+        case .bast:          SIMD3<Float>( 0.40, 0.65, 0)
+        case .innerLog:      SIMD3<Float>( 0.80, 0.65, 0)
         }
     }
 

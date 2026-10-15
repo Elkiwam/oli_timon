@@ -54,6 +54,22 @@ struct TooltipView: View {
     }
 }
 
+/// Floating tooltip shown after all layers are revealed.
+struct TapHintTooltipView: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "hand.tap")
+                .font(.title2)
+            Text("Tap a layer to reveal more information")
+                .font(.title3.weight(.medium))
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .glassBackgroundEffect()
+        .scaleEffect(1.5)
+    }
+}
+
 /// Combined control panel: instruction hint + recombine/exit buttons, below the log.
 struct ControlPanelView: View {
 
@@ -61,23 +77,24 @@ struct ControlPanelView: View {
     let onRecombine: @MainActor () -> Void
     let onExit: @MainActor () -> Void
 
-    private var hint: String {
-        if !appModel.logDetected {
-            return "Point at the log to begin."
-        } else if appModel.selectedLayer != nil {
-            return "Tap again to deselect."
-        } else if appModel.hasSeparatedLayers {
-            return "Tap a layer to inspect it."
-        } else {
-            return "Pinch a layer and swipe up."
-        }
-    }
+    // Hints moved to standalone tooltip views; kept for reference.
+    // private var hint: String {
+    //     if !appModel.logDetected {
+    //         return "Point at the log to begin."
+    //     } else if appModel.selectedLayer != nil {
+    //         return "Tap again to deselect."
+    //     } else if appModel.hasSeparatedLayers {
+    //         return "Tap a layer to inspect it."
+    //     } else {
+    //         return "Pinch a layer and swipe up."
+    //     }
+    // }
 
     var body: some View {
         VStack(spacing: 12) {
-            Text(hint)
-                .font(.title3)
-                .foregroundStyle(.secondary)
+            // Text(hint)
+            //     .font(.title3)
+            //     .foregroundStyle(.secondary)
 
             HStack(spacing: 16) {
                 Button {

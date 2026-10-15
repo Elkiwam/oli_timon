@@ -20,6 +20,7 @@ final class LayerController {
     private var activeDrag: ActiveDrag?
     private var rootEntity: Entity?
     private var tooltipEntity: Entity?
+    private var tapHintEntity: Entity?
     private var arkitSession: ARKitSession?
 
     private static let flowName = "NutrientFlow"
@@ -54,11 +55,28 @@ final class LayerController {
 
         let root = Entity()
         root.name = "LogRoot"
-        // Position is set by object tracking when the physical log is detected.
+        // Start at a sensible default so the control panel and UI are visible
+        // while waiting for object tracking. Tracking will override this position.
+        root.position = AppConfig.logPosition
         self.rootEntity = root
 
         do {
             let scene = try await Entity(named: AppConfig.sceneName, in: realityKitContentBundle)
+
+            // Remove the RealityKit.Anchoring component from the "Transform" entity in Scene.usda.
+            // It defines its own object tracking anchor for the same .referenceobject, which
+            // conflicts with our manual ARKit ObjectTrackingProvider.
+            func stripAnchoring(from entity: Entity) {
+                if entity.components[AnchoringComponent.self] != nil {
+                    print("[Scene] Removed AnchoringComponent from '\(entity.name)'")
+                    entity.components.remove(AnchoringComponent.self)
+                }
+                for child in entity.children {
+                    stripAnchoring(from: child)
+                }
+            }
+            stripAnchoring(from: scene)
+
             root.addChild(scene)
             for layer in Layer.allCases {
                 guard let entity = scene.findEntity(named: layer.entityName) else {
@@ -86,30 +104,74 @@ final class LayerController {
             print("[Layout] \(layer.title): extents=\(bounds.extents) → position=\(entity.position)")
         }
 
+        // Use the tallest layer's half-height for all panels so titles align on one line.
+        let maxHalfHeight = layerEntities.values.reduce(Float(0)) { maxSoFar, entity in
+            max(maxSoFar, entity.visualBounds(relativeTo: root).extents.y / 2)
+        }
         for (layer, entity) in layerEntities {
-            // Compute per-layer panel height: distance from entity center to its visual top.
-            let bounds = entity.visualBounds(relativeTo: root)
-            let halfHeight = bounds.extents.y / 2
-            configure(layer, entity: entity, root: root, panelHalfHeight: halfHeight)
+            configure(layer, entity: entity, root: root, panelHalfHeight: maxHalfHeight)
         }
 
-        // Drag zone: a large invisible collision box at root origin (the log position).
-        // Ensures drags anywhere near the log redirect to the next draggable layer.
+        // Drag zone: uses the actual 3D scan of the log so the hover glow
+        // precisely matches the physical log's shape and position.
         let dragZone = Entity()
         dragZone.name = "LogDragZone"
         dragZone.components.set(CollisionComponent(shapes: [.generateBox(size: [0.3, 0.4, 0.3])]))
         dragZone.components.set(InputTargetComponent())
         root.addChild(dragZone)
 
+        // Load the scanned log mesh asynchronously; make it fully transparent
+        // so only the HoverEffectComponent spotlight is visible.
+        Task {
+            do {
+                let logScan = try await Entity(named: "Log_Model_mui_1", in: realityKitContentBundle)
+                func makeTransparent(_ entity: Entity) {
+                    if var model = entity.components[ModelComponent.self] {
+                        model.materials = model.materials.map { _ in
+                            var mat = SimpleMaterial()
+                            mat.color.tint = UIColor(white: 1.0, alpha: 0.0)
+                            return mat
+                        }
+                        entity.components.set(model)
+                    }
+                    for child in entity.children { makeTransparent(child) }
+                }
+                makeTransparent(logScan)
+
+                logScan.components.set(InputTargetComponent())
+                logScan.generateCollisionShapes(recursive: true)
+                logScan.components.set(HoverEffectComponent(.spotlight(
+                    HoverEffectComponent.SpotlightHoverEffectStyle(
+                        color: UIColor(red: 1.0, green: 0.75, blue: 0.4, alpha: 1.0),
+                        strength: 3.0
+                    )
+                )))
+                dragZone.addChild(logScan)
+                print("[Hover] Log scan mesh loaded for hover effect.")
+            } catch {
+                print("[Hover] Could not load log scan: \(error)")
+            }
+        }
+
         // Tooltip: shown after log detection, hidden once all layers are revealed.
         let tooltip = Entity()
         tooltip.name = "Tooltip"
         tooltip.components.set(ViewAttachmentComponent(rootView: TooltipView(appModel: appModel)))
         tooltip.components.set(BillboardComponent())
-        tooltip.position = [0, 0.55, 0]
+        tooltip.position = [0, -0.30, 0]
         tooltip.isEnabled = false
         root.addChild(tooltip)
         self.tooltipEntity = tooltip
+
+        // Tap hint tooltip: shown after all layers are revealed, hidden on first tap selection.
+        let tapHint = Entity()
+        tapHint.name = "TapHintTooltip"
+        tapHint.components.set(ViewAttachmentComponent(rootView: TapHintTooltipView()))
+        tapHint.components.set(BillboardComponent())
+        tapHint.position = [0, -0.30, 0]
+        tapHint.isEnabled = false
+        root.addChild(tapHint)
+        self.tapHintEntity = tapHint
 
         root.addChild(makeBackdrop())
         root.addChild(makeControlPanel(onExit: onExit))
@@ -299,10 +361,13 @@ final class LayerController {
         state.riseOffsetY = clampedDelta
         state.basePosition.y = drag.layerStartY + clampedDelta
 
-        // Fade in proportional to rise distance
-        let fadeProgress = min(clampedDelta / AppConfig.riseFadeInDistance, 1.0)
-        state.targetOpacity = fadeProgress
-        state.currentOpacity = fadeProgress
+        // Fade in and scale up proportional to rise toward the final Y position
+        let progress = min(clampedDelta / AppConfig.revealedHeightAboveLog, 1.0)
+        state.targetOpacity = progress
+        state.currentOpacity = progress
+        let riseScale = 0.25 + 0.75 * progress
+        state.targetScale = riseScale
+        state.currentScale = riseScale
 
         entity.components.set(state)
     }
@@ -329,6 +394,7 @@ final class LayerController {
             state.isSeparated = true
             state.targetPosition = state.revealedPosition
             state.targetOpacity = 1
+            state.targetScale = 1
             appModel.separatedLayers.insert(drag.layer)
         } else {
             // Below threshold: fade back and return to rest
@@ -336,15 +402,17 @@ final class LayerController {
             state.isSeparated = false
             state.targetPosition = state.restPosition
             state.targetOpacity = 0
+            state.targetScale = 1
             state.riseOffsetY = 0
             appModel.separatedLayers.remove(drag.layer)
         }
 
         entity.components.set(state)
 
-        // Hide tooltip once all layers are revealed
+        // Hide swipe tooltip once all layers are revealed; show tap hint instead.
         if appModel.allLayersRevealed {
             tooltipEntity?.isEnabled = false
+            tapHintEntity?.isEnabled = true
         }
 
         refreshPanels()
@@ -421,6 +489,11 @@ final class LayerController {
         let isInnerLogFirstTap = layer == .innerLog && !appModel.innerLogRevealed
 
         appModel.selectedLayer = layer
+
+        // Hide the tap hint once the user taps any layer.
+        if layer != nil {
+            tapHintEntity?.isEnabled = false
+        }
 
         for (candidate, entity) in layerEntities {
             guard var state = entity.components[LayerComponent.self] else { continue }
@@ -555,8 +628,9 @@ final class LayerController {
         appModel.separatedLayers.removeAll()
         appModel.innerLogRevealed = false
 
-        // Re-show tooltip for another round
+        // Re-show swipe tooltip for another round; hide tap hint
         tooltipEntity?.isEnabled = true
+        tapHintEntity?.isEnabled = false
 
         refreshPanels()
     }
@@ -870,49 +944,73 @@ final class LayerController {
         // In the simulator, object tracking is not available.
         // Fall back to a fixed position with a debug placeholder.
         #if targetEnvironment(simulator)
-        print("[ObjectTracking] Running in simulator — using fixed position with debug placeholder.")
+        print("[ObjectTracking] Running in simulator — using fixed position.")
         simulatorFallback()
         return
         #else
         guard ObjectTrackingProvider.isSupported else {
             print("[ObjectTracking] ObjectTrackingProvider not supported on this device.")
-            simulatorFallback()
+            deviceFallback(reason: "Object tracking not supported on this device.")
             return
         }
 
-        guard let url = realityKitContentBundle.url(
+        // Look for the .referenceobject in the app's main bundle (not the RealityKitContent bundle,
+        // whose .rkassets are compiled into a binary archive and not individually accessible).
+        guard let url = Bundle.main.url(
             forResource: AppConfig.referenceObjectName,
             withExtension: AppConfig.referenceObjectExtension
         ) else {
-            print("[ObjectTracking] Reference object file not found in bundle.")
-            simulatorFallback()
+            print("[ObjectTracking] Reference object file '\(AppConfig.referenceObjectName).\(AppConfig.referenceObjectExtension)' not found in main bundle.")
+            // List available .referenceobject files for debugging
+            if let resourcePath = Bundle.main.resourcePath {
+                let files = (try? FileManager.default.contentsOfDirectory(atPath: resourcePath)) ?? []
+                let refFiles = files.filter { $0.hasSuffix(".referenceobject") }
+                print("[ObjectTracking] Available .referenceobject files in main bundle: \(refFiles)")
+                print("[ObjectTracking] All bundle files: \(files)")
+            }
+            deviceFallback(reason: "Reference object file not found in app bundle.")
             return
         }
+        print("[ObjectTracking] Found reference object at: \(url.path)")
 
         do {
-            let referenceObject = try await ReferenceObject(from: url)
+            // Request explicit authorization before starting the session.
             let session = ARKitSession()
+            let authResults = await session.requestAuthorization(for: [.worldSensing])
+            guard authResults[.worldSensing] == .allowed else {
+                print("[ObjectTracking] World sensing authorization denied: \(String(describing: authResults[.worldSensing]))")
+                deviceFallback(reason: "World sensing permission denied.")
+                return
+            }
+            print("[ObjectTracking] World sensing authorized.")
+
+            let referenceObject = try await ReferenceObject(from: url)
+            print("[ObjectTracking] Reference object loaded: name='\(referenceObject.name)'")
             let objectTracking = ObjectTrackingProvider(referenceObjects: [referenceObject])
             self.arkitSession = session
 
             try await session.run([objectTracking])
+            print("[ObjectTracking] Session running, waiting for anchor updates...")
 
             for await update in objectTracking.anchorUpdates {
                 switch update.event {
                 case .added, .updated:
+                    print("[ObjectTracking] Anchor event: \(update.event), isTracked=\(update.anchor.isTracked)")
                     guard update.anchor.isTracked else { continue }
                     let worldTransform = update.anchor.originFromAnchorTransform
+                    print("[ObjectTracking] Detected transform: \(worldTransform)")
                     applyDetectedTransform(worldTransform)
                     // Stop tracking after first detection (lock in place)
                     session.stop()
                     return
                 case .removed:
+                    print("[ObjectTracking] Anchor removed.")
                     continue
                 }
             }
         } catch {
             print("[ObjectTracking] Failed to start: \(error)")
-            simulatorFallback()
+            deviceFallback(reason: "ARKit error: \(error.localizedDescription)")
         }
         #endif
     }
@@ -923,14 +1021,22 @@ final class LayerController {
         root.transform = Transform(matrix: worldTransform)
         appModel.logDetected = true
         tooltipEntity?.isEnabled = true
-        print("[ObjectTracking] Log detected and locked in place.")
+        print("[ObjectTracking] Log detected and locked in place at: \(root.position)")
     }
 
-    /// Simulator / unsupported fallback: place at a fixed position, show a semitransparent
-    /// scan of the log so we can see where the physical log would be, and enable drag interaction.
+    /// On-device fallback when object tracking fails. Enables interaction at the default
+    /// position so the user can still use the app, but does NOT load any placeholder geometry.
+    private func deviceFallback(reason: String) {
+        print("[ObjectTracking] Device fallback: \(reason)")
+        // Root is already at AppConfig.logPosition (set in buildScene).
+        // Enable interaction so the user isn't stuck.
+        appModel.logDetected = true
+        tooltipEntity?.isEnabled = true
+    }
+
+    /// Simulator-only fallback: use the fixed position and enable interaction.
     private func simulatorFallback() {
-        guard let root = rootEntity else { return }
-        root.position = AppConfig.logPosition
+        // Root is already at AppConfig.logPosition (set in buildScene).
         appModel.logDetected = true
         tooltipEntity?.isEnabled = true
 
@@ -938,45 +1044,29 @@ final class LayerController {
         for (layer, entity) in layerEntities {
             let worldPos = entity.position(relativeTo: nil)
             print("[Simulator] \(layer.title) local=\(entity.position) world=\(worldPos)")
-            if let collision = entity.components[CollisionComponent.self] {
-                print("[Simulator]   collision shapes: \(collision.shapes.count)")
-            }
         }
 
-        // Load the actual 3D scan of the log as a semitransparent placeholder.
-        Task {
-            do {
-                let logModel = try await Entity(named: "Log_Model_mui_1", in: realityKitContentBundle)
-                logModel.name = "DebugPlaceholderLog"
-
-                // Make all meshes semitransparent
-                func applyGhostMaterial(to entity: Entity) {
-                    if var model = entity.components[ModelComponent.self] {
-                        model.materials = model.materials.map { _ in
-                            SimpleMaterial(color: UIColor(white: 0.7, alpha: 0.3), isMetallic: false)
-                        }
-                        entity.components.set(model)
-                    }
-                    for child in entity.children {
-                        applyGhostMaterial(to: child)
-                    }
-                }
-                applyGhostMaterial(to: logModel)
-
-                root.addChild(logModel)
-                print("[Simulator] Placed log scan placeholder at \(AppConfig.logPosition).")
-            } catch {
-                // Fallback to a simple cylinder if the scan can't be loaded
-                let cylinder = ModelEntity(
-                    mesh: .generateCylinder(height: 0.35, radius: 0.08),
-                    materials: [SimpleMaterial(color: UIColor(white: 0.6, alpha: 0.25), isMetallic: false)]
-                )
-                cylinder.name = "DebugPlaceholderLog"
-                cylinder.orientation = simd_quatf(angle: .pi / 2, axis: [0, 0, 1])
-                root.addChild(cylinder)
-                print("[Simulator] Log scan not found, using cylinder placeholder. Error: \(error)")
-            }
-        }
+        // Ghost log placeholder — commented out for now (testing on device).
+        // Task {
+        //     do {
+        //         let logModel = try await Entity(named: "Log_Model_mui_1", in: realityKitContentBundle)
+        //         logModel.name = "DebugPlaceholderLog"
+        //         func applyGhostMaterial(to entity: Entity) {
+        //             if var model = entity.components[ModelComponent.self] {
+        //                 model.materials = model.materials.map { _ in
+        //                     SimpleMaterial(color: UIColor(white: 0.7, alpha: 0.3), isMetallic: false)
+        //                 }
+        //                 entity.components.set(model)
+        //             }
+        //             for child in entity.children { applyGhostMaterial(to: child) }
+        //         }
+        //         applyGhostMaterial(to: logModel)
+        //         rootEntity?.addChild(logModel)
+        //         print("[Simulator] Placed log scan placeholder.")
+        //     } catch {
+        //         print("[Simulator] Ghost log failed: \(error)")
+        //     }
+        // }
     }
 }
 
